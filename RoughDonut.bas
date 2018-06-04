@@ -7,6 +7,7 @@ Option Explicit
 	Dim doc As FMDocument
 	Dim app As Application
 	Dim feature As FMFeature
+	Dim stock As FMStock
 	Dim partdoc As FMPartDoc
 	Dim config As FMConfiguration
 
@@ -44,6 +45,8 @@ Option Explicit
 	Dim fin_allow As Double 'finish allowance on o.d. & i.d.
 	Dim turn_clearance As Double 'clearance for o.d. & face
 	Dim bore_clearance As Double 'clearance for bore
+	Dim bore_allow As Double
+	Dim bore_chfr As Double
 
 	'tools
 	Dim turnsfm As Double
@@ -58,23 +61,21 @@ Option Explicit
 	Dim boretool As String 'name of boring bar
 	Dim toolrad3 As Double 'tool radius for rough trepan tool
 	Dim trepantool As String 'name for rough trepan tool
-	Dim trepanrghdoc As Double 'doc for rough trepan
 	Dim trepanwidth As Double 'width of trepan tool
 
 	'flags
 	Dim trepanFlag As Boolean
 
 	'constants
-	'Const pi = Atn(1)*4
+	Const pi = Atn(1)*4
 #End Region
 
 '*********************************************************************************
 '*-----------------------------------Subs----------------------------------------*
 '*********************************************************************************
 
-Sub main
-	MsgBox(Application.Version, vbOkOnly)
-	'RoughDonut
+Sub Main
+	RoughDonut
 End Sub
 
 Private Sub AddIn_OnConnect(ByVal flags As FeatureCAM.tagFMAddInFlags)
@@ -86,22 +87,29 @@ Private Sub AddIn_OnDisConnect(ByVal flags As FeatureCAM.tagFMAddInFlags)
 End Sub
 
 Sub RoughDonut
-	trepanFlag = False
-	dlgmaterial = "Select Material"
-	dlgmachine = "Select Machine"
-	face_1st = .1
-	face_2nd = .1
 
-	CreateDialogMachine 'call sub for machine selection
-	CreateDialogMaterial 'call sub for material selection
-	InitializeVars 'call initialize variable routine
-	CreateDialogDonut 'call main dimmension input form
-	If trepanFlag Then
-		CreateDialogTrepan
+	If Application.Version = "24.3.4.016" Then
+
+		If MsgBox("This macro may not be supported in your current version of FeatureCAM. It's written For 2018 release 24.3.4.016 Or later.", vbOkCancel + vbCritical + vbDefaultButton2, "Version Error") = vbOK Then
+
+			trepanFlag = False
+			dlgmaterial = "Select Material"
+			dlgmachine = "Select Machine"
+			face_1st = .1
+			face_2nd = .1
+
+			CreateDialogMachine 'call sub for machine selection
+			CreateDialogMaterial 'call sub for material selection
+			InitializeVars 'call initialize variable routine
+			CreateDialogDonut 'call main dimmension input form
+			If trepanFlag Then
+				CreateDialogTrepan
+			End If
+			InitializeDoc 'call initialize doc objects routine
+			CreateFeature 'call to create features
+			End
+		End If
 	End If
-	InitializeDoc 'call initialize doc objects routine
-	CreateFeature 'call to create features
-
 End Sub
 
 Private Sub CreateDialogMachine
@@ -410,207 +418,266 @@ End Sub
 
 Private Sub CreateTrepan
 
-	'geometry for trepan
+'geometry for trepan
+Dim ODLine, backLine, IDLine, UhhLine As FMLine
 
-	Set Line5 = doc.Geometry.AddLine2Points(trepan_od/2,0,0,trepan_od/2,0,-trepan_depth)
-	Set Line6 = doc.Geometry.AddLine2Points(trepan_od/2,0,-trepan_depth,trepan_id/2,0,-trepan_depth)
-	Set Line7 = doc.Geometry.AddLine2Points(trepan_id/2,0,-trepan_depth,trepan_id/2,0,0)
+Set ODLine  = doc.Geometry.AddLine2Points(trepan_od/2,0,0,trepan_od/2,0,-trepan_depth)
+Set backLine = doc.Geometry.AddLine2Points(trepan_od/2,0,-trepan_depth,trepan_id/2,0,-trepan_depth)
+Set IDLine = doc.Geometry.AddLine2Points(trepan_id/2,0,-trepan_depth,trepan_id/2,0,0)
 
-	'trepan features
-	If trepan_od>4.999 And trepan_od/2-trepan_id/2-(trepan_depth/Tan(28*pi/180))-.1-Sin(45*pi/180)*(.1+toolrad2-Sin(45*pi/180)*(toolrad2))+toolrad2>.8   Then
+'trepan features
+If trepan_od > 4.999 And trepan_od/2-trepan_id/2-(trepan_depth/Tan(28*pi/180))-.1-Sin(45*pi/180)*(.1+toolrad2-Sin(45*pi/180)*(toolrad2))+toolrad2>.8   Then
 
-	Set line8 = doc.Geometry.AddLine2Points(trepan_od/2,0,0,trepan_od/2-trepan_depth/(Tan(28*pi/180)),0,-trepan_depth)
+Set UhhLine = doc.Geometry.AddLine2Points(trepan_od/2,0,0,trepan_od/2-trepan_depth/(Tan(28*pi/180)),0,-trepan_depth)
 
-	toolrad3 = .046
-	If dlgmachine = "5230" Then
-		trepantool = "DDJNR (trepan)"
-	Else
-		trepantool = "DDJNL (trepan)"
-	End If
+toolrad3 = .046
+If dlgmachine = "5230" Then
+    trepantool = "DDJNR (trepan)"
+Else
+    trepantool = "DDJNL (trepan)"
+End If
 
-	If dlgmaterial = "Copper" Then
-		trepanrghdoc = .05
-	Else
-		trepanrghdoc = .12
-	End If
+Dim trepandoc
 
-	'rough trepan
-	Set curveptlist11 = doc.CreateCurvePtList
-	curveptlist11.AddPt(trepan_od/2,0,0)
-	curveptlist11.AddPt(trepan_od/2-trepan_depth/(Tan(28*pi/180)),0,-trepan_depth)
-	curveptlist11.AddPt(trepan_id/2,0,-trepan_depth)
-	curveptlist11.AddPt(trepan_id/2,0,0)
-	Set curve11 = curveptlist11.AddCurveFromPtList(False)
+If dlgmaterial = "Copper" Then
+    trepandoc = .05
+Else
+    trepandoc = .12
+End If
 
-	Set turn7 = doc.Features.AddTurn(curve11,,,)
-	turn7.SetAttribute(eAID_DoFinish,,False,False,)
-	turn7.SetAttribute(eAID_TurnCycleType,,1,False,)
-	turn7.Operations(1).SetAttribute(eAID_TurnRoughDOC,,trepanrghdoc,False,)
-	turn7.Operations(1).SetAttribute(eAID_MaxZBound,,-oal,False,)
-	turn7.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,.03,False,)
-	turn7.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,.03,False,)
-	turn7.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
-	turn7.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,False,False,)
-	'turn7.Operations(1).SetAttribute(eAID_TurnRapidFeedRate,,.009,False,)
-	turn7.Operations(1).OverrideSpeed(turnsfm,)
-	turn7.Operations(1).OverrideFeed(.012,)
-	turn7.Operations(1).OverrideTool(trepantool,)
-	turn7.Name = "rough_trepan"
+'rough trepan
+Dim rghCurveL As FMCurvePtList
+Dim rghCurve As FMCurve
 
-	'finish trepan bottom
-	turn8startpt = "pt(" & trepan_od/2-Sin(28*pi/180)*(toolrad3)+Cos(28*pi/180)*(.1+toolrad3) & ",0," & Cos(28*pi/180)*(toolrad3)+Sin(28*pi/180)*(.1+toolrad3)+(.1+toolrad3) &")"
-	turn8endpt = "pt(" & trepan_id/2+.03+toolrad3+Sin(45*pi/180)*(.1+toolrad3) & ",0," & Cos(45*pi/180)*(.1+toolrad3*2) &")"
-	Set curveptlist12 = doc.CreateCurvePtList
-	curveptlist12.AddPt(trepan_od/2,0,0)
-	curveptlist12.AddPt(trepan_od/2-trepan_depth/(Tan(28*pi/180)),0,-trepan_depth)
-	curveptlist12.AddPt(trepan_id/2+.03,0,-trepan_depth)
-	curveptlist12.AddPt(trepan_id/2+.03,0,-trepan_depth+.05)
-	Set curve12 = curveptlist12.AddCurveFromPtList(False)
+Set rghCurveL = doc.CreateCurvePtList
+rghCurveL.AddPt(trepan_od/2,0,0)
+rghCurveL.AddPt(trepan_od/2-trepan_depth/(Tan(28*pi/180)),0,-trepan_depth)
+rghCurveL.AddPt(trepan_id/2,0,-trepan_depth)
+rghCurveL.AddPt(trepan_id/2,0,0)
+Set rghCurve = rghCurveL.AddCurveFromPtList(False)
 
-	Set turn8 = doc.Features.AddTurn(curve12,,,)
-	turn8.SetAttribute(eAID_DoRough,,False,False,)
-	turn8.SetAttribute(eAID_TurnCycleType,,1,False,)
-	turn8.Operations(1).OverrideSpeed(turnsfm,)
-	turn8.Operations(1).OverrideFeed(.012,)
-	turn8.Operations(1).SetAttribute(eAID_TurnStartPt,,turn8startpt,False,)
-	turn8.Operations(1).SetAttribute(eAID_TurnEndPt,,turn8endpt,False,)
-	turn8.Operations(1).OverrideTool(trepantool,)
-	turn8.Name = "fin_trepan_bottom"
+Dim rghTurn As FMTurn
 
-	'finish hub dia
-	turn9startpt = "pt(" & trepan_id/2+toolrad3-.02-Sin(45*pi/180)*(.1)-toolrad3 & ",0," & Cos(45*pi/180)*(.1+toolrad3*2) &")"
-	turn9endpt = "pt(" & trepan_id/2+.09+toolrad3+Sin(45*pi/180)*(.1+toolrad3) & ",0," & Cos(45*pi/180)*(.1+toolrad3*2) &")"
-	Set curveptlist13 = doc.CreateCurvePtList
-	curveptlist13.AddPt(trepan_id/2-.02,0,0)
-	curveptlist13.AddPt(trepan_id/2,0,-.02)
-	curveptlist13.AddPt(trepan_id/2,0,-trepan_depth)
-	curveptlist13.AddPt(trepan_id/2+.09,0,-trepan_depth)
-	Set curve13 = curveptlist13.AddCurveFromPtList(False)
+Set rghTurn = doc.Features.AddTurn(rghCurve,,,)
+rghTurn.SetAttribute(eAID_DoFinish,,False,False,)
+rghTurn.SetAttribute(eAID_TurnCycleType,,1,False,)
+rghTurn.Operations(1).SetAttribute(eAID_TurnRoughDOC,,trepandoc,False,)
+rghTurn.Operations(1).SetAttribute(eAID_MaxZBound,,-oal,False,)
+rghTurn.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,.03,False,)
+rghTurn.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,.03,False,)
+rghTurn.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
+rghTurn.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,False,False,)
+'rghTurn.Operations(1).SetAttribute(eAID_TurnRapidFeedRate,,.009,False,)
+rghTurn.Operations(1).OverrideSpeed(turnsfm,)
+rghTurn.Operations(1).OverrideFeed(.012,)
+rghTurn.Operations(1).OverrideTool(trepantool,)
+rghTurn.Name = "rough_trepan"
 
-	Set turn9 = doc.Features.AddTurn(curve13,,,)
-	turn9.SetAttribute(eAID_DoRough,,False,False,)
-	turn9.Operations(1).OverrideSpeed(turnsfm,)
-	turn9.Operations(1).OverrideFeed(.012,)
-	turn9.Operations(1).SetAttribute(eAID_TurnStartPt,,turn9startpt,False,)
-	turn9.Operations(1).SetAttribute(eAID_TurnEndPt,,turn9endpt,False,)
-	turn9.Operations(1).OverrideTool(trepantool,)
-	turn9.Name = "fin_hub_dia"
+'finish trepan bottom
+Dim bottomStartpt, bottomEndpt As String
 
-	'rough match trepan
-	bore5endpt = "pt(" & trepan_od/2-.03-toolrad2-Sin(45*pi/180)*.025 & ",0," & -trepan_depth+.03+toolrad2+Cos(45*pi/180)*.025 &")"
-	Set curveptlist14 = doc.CreateCurvePtList
-		curveptlist14.AddPt(trepan_od/2,0,0)
-		curveptlist14.AddPt(trepan_od/2,0,-trepan_depth)
-		curveptlist14.AddPt(trepan_od/2-trepan_depth/(Tan(28*pi/180)),0,-trepan_depth)
-	Set curve14 = curveptlist14.AddCurveFromPtList(False)
+bottomStartpt = "pt(" & trepan_od/2-Sin(28*pi/180)*(toolrad3)+Cos(28*pi/180)*(.1+toolrad3) & ",0," & Cos(28*pi/180)*(toolrad3)+Sin(28*pi/180)*(.1+toolrad3)+(.1+toolrad3) &")"
+bottomEndpt = "pt(" & trepan_id/2+.03+toolrad3+Sin(45*pi/180)*(.1+toolrad3) & ",0," & Cos(45*pi/180)*(.1+toolrad3*2) &")"
 
-	Set bore5 = doc.Features.AddBore(curve14,line8,,)
-		bore5.SetAttribute(eAID_DoFinish,,False,False,)
-		bore5.Operations(1).SetAttribute(eAID_TurnRoughDOC,,trepanrghdoc,False,)
-		bore5.Operations(1).SetAttribute(eAID_MinXBound,,trepan_od/2-trepan_depth/(Tan(28*pi/180)),False,)
-		bore5.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,.03,False,)
-		bore5.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,.03,False,)
-		bore5.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
-		bore5.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
-		bore5.Operations(1).SetAttribute(eAID_TurnEndPt,,bore5endpt,False,)
-		bore5.Operations(1).OverrideSpeed(boresfm,)
-		bore5.Operations(1).OverrideFeed(.012,)
-		bore5.Operations(1).OverrideTool(boretool,)
-		bore5.Name = "rough_match_trepan"
+Dim bottomCurveL As FMCurvePtList
+Dim bottomCurve As FMCurve
 
-	'finish match trepan
-	bore6startpt = "pt(" & trepan_od/2-trepan_depth/(Tan(28*pi/180))-.1-Sin(45*pi/180)*(.1+toolrad2-Sin(45*pi/180)*(toolrad2)) & ",0," & toolrad2-.05+Cos(45*pi/180)*(.1+toolrad2-Cos(45*pi/180)*(toolrad2)) &")"
-	bore6endpt = "pt(" & trepan_od/2-.03-toolrad2-Sin(45*pi/180)*(toolrad2+.1) & ",0," & trepan_depth-.05+Cos(45*pi/180)*(.1+toolrad3*2) &")"
-	Set curveptlist15 = doc.CreateCurvePtList
-		curveptlist15.AddPt(trepan_od/2-.03,0,-trepan_depth + .05)
-		curveptlist15.AddPt(trepan_od/2-.03,0,-trepan_depth)
-		curveptlist15.AddPt(trepan_od/2-trepan_depth/(Tan(28*pi/180))-.1,0,-trepan_depth)
-	Set curve15 = curveptlist15.AddCurveFromPtList(False)
+Set bottomCurveL = doc.CreateCurvePtList
+bottomCurveL.AddPt(trepan_od/2,0,0)
+bottomCurveL.AddPt(trepan_od/2-trepan_depth/(Tan(28*pi/180)),0,-trepan_depth)
+bottomCurveL.AddPt(trepan_id/2+.03,0,-trepan_depth)
+bottomCurveL.AddPt(trepan_id/2+.03,0,-trepan_depth+.05)
+Set bottomCurve = bottomCurveL.AddCurveFromPtList(False)
 
-	Set bore6 = doc.Features.AddBore(curve15,,,)
-		bore6.SetAttribute(eAID_DoRough,,False,False,)
-		bore6.SetAttribute(eAID_TurnCycleType,,1,False,) 'change cycle from bore to face
-		bore6.SetAttribute(eAID_TurnReverseFinish,,True,,) 'change feed direction from negative to positive
-		bore6.Operations(1).SetAttribute(eAID_TurnEngageAng,,45,False,)
-		bore6.Operations(1).SetAttribute(eAID_TurnStartPt,,bore6startpt,False,)
-		bore6.Operations(1).SetAttribute(eAID_TurnEndPt,,bore6endpt,False,)
-		bore6.Operations(1).OverrideSpeed(boresfm,)
-		bore6.Operations(1).OverrideFeed(.012,)
-		bore6.Operations(1).OverrideTool(boretool,)
-		bore6.Name = "fin_match_trepan"
+Dim bottomTurn As FMTurn
 
-	'finish outer trepan dia
-	bore7startpt = "pt(" & trepan_od/2+.02+Sin(45*pi/180)*(.1) & ",0," & Cos(45*pi/180)*(.1+toolrad2*2) &")"
-	bore7endpt = "pt(" & trepan_od/2-.09-Sin(45*pi/180)*(toolrad2+.1) & ",0," & Cos(45*pi/180)*(.1+toolrad2*2) &")"
-	Set curveptlist16 = doc.CreateCurvePtList
-		curveptlist16.AddPt(trepan_od/2+.02,0,0)
-		curveptlist16.AddPt(trepan_od/2,0,-.02)
-		curveptlist16.AddPt(trepan_od/2,0,-trepan_depth)
-		curveptlist16.AddPt(trepan_od/2-.09,0,-trepan_depth)
-	Set curve16 = curveptlist16.AddCurveFromPtList(False)
+Set bottomTurn = doc.Features.AddTurn(bottomCurve,,,)
+bottomTurn.SetAttribute(eAID_DoRough,,False,False,)
+bottomTurn.SetAttribute(eAID_TurnCycleType,,1,False,)
+bottomTurn.Operations(1).OverrideSpeed(turnsfm,)
+bottomTurn.Operations(1).OverrideFeed(.012,)
+bottomTurn.Operations(1).SetAttribute(eAID_TurnStartPt,,bottomStartpt,False,)
+bottomTurn.Operations(1).SetAttribute(eAID_TurnEndPt,,bottomEndpt,False,)
+bottomTurn.Operations(1).OverrideTool(trepantool,)
+bottomTurn.Name = "fin_trepan_bottom"
 
-	Set bore7 = doc.Features.AddBore(curve16,,,)
-		bore7.SetAttribute(eAID_DoRough,,False,False,)
-		bore7.Operations(1).SetAttribute(eAID_TurnStartPt,,bore7startpt,False,)
-		bore7.Operations(1).SetAttribute(eAID_TurnEndPt,,bore7endpt,False,)
-		bore7.Operations(1).OverrideSpeed(boresfm,)
-		bore7.Operations(1).OverrideFeed(.012,)
-		bore7.Operations(1).OverrideTool(boretool,)
-		bore7.Name = "fin_outer_trepan_dia"
+'finish hub dia
 
-	Else
+Dim hubStartpt, hubEndpt As String
 
-	toolrad3 = .03
+hubStartpt = "pt(" & trepan_id/2+toolrad3-.02-Sin(45*pi/180)*(.1)-toolrad3 & ",0," & Cos(45*pi/180)*(.1+toolrad3*2) &")"
+hubEndpt = "pt(" & trepan_id/2+.09+toolrad3+Sin(45*pi/180)*(.1+toolrad3) & ",0," & Cos(45*pi/180)*(.1+toolrad3*2) &")"
 
-	'If trepan_od>3 Then
-	'	trepantool = ".312 w M/Cr Face"
-	'	trepanwidth = .312
-	'Else
-		trepantool = ".250 w (.03 tnr) M/Cr Face"
-		trepanwidth = .25
-	'End If
+Dim hubCurveL As FMCurvePtList
+Dim hubCurve As FMCurve
 
-	'rough trepan
-	groove1endpt = "pt(" & trepan_id/2+.05+toolrad3 & ",0," & .1+toolrad3 &")"
-	Set curveptlist11 = doc.CreateCurvePtList
-		curveptlist11.AddPt(trepan_od/2,0,0)
-		curveptlist11.AddPt(trepan_od/2,0,-trepan_depth)
-		curveptlist11.AddPt(trepan_id/2,0,-trepan_depth)
-		curveptlist11.AddPt(trepan_id/2,0,0)
-	Set curve11 = curveptlist11.AddCurveFromPtList(False)
+Set hubCurveL = doc.CreateCurvePtList
+hubCurveL.AddPt(trepan_id/2-.02,0,0)
+hubCurveL.AddPt(trepan_id/2,0,-.02)
+hubCurveL.AddPt(trepan_id/2,0,-trepan_depth)
+hubCurveL.AddPt(trepan_id/2+.09,0,-trepan_depth)
+Set hubCurve = hubCurveL.AddCurveFromPtList(False)
 
-	Set groove1 = doc.Features.AddProfileTurnGroove(curve11,,eGO_Face,,)
-		groove1.SetAttribute(eAID_DoFinish,,False,False,)
-		groove1.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,.05,False,)
-		groove1.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,.01,False,)
-		groove1.Operations(1).SetAttribute(eAID_TurnGrvRoughDOC,,5,,)
-		groove1.Operations(1).OverrideTool(trepantool,)
-		groove1.Operations(1).SetAttribute(eAID_TurnEndPt,,groove1endpt,False,)
-		groove1.Name = "rough_trepan"
+Dim hubTurn As FMTurn
 
-	'finish trepan
-	groove2startpt = "pt(" & trepan_id/2-.02+Sin(45*pi/180)*toolrad3 & ",0," & .1+toolrad3 &")"
-	groove2endpt = "pt(" & trepan_id/2+.02+toolrad3 & ",0," & .1+toolrad3 &")"
-	Set curveptlist12 = doc.CreateCurvePtList
-		curveptlist12.AddPt(trepan_od/2+.02,0,0)
-		curveptlist12.AddPt(trepan_od/2,0,-.02)
-		curveptlist12.AddPt(trepan_od/2,0,-trepan_depth)
-		curveptlist12.AddPt(trepan_id/2,0,-trepan_depth)
-		curveptlist12.AddPt(trepan_id/2,0,-.02)
-		curveptlist12.AddPt(trepan_id/2-.02,0,0)
-	Set curve12 = curveptlist12.AddCurveFromPtList(False)
+Set hubTurn = doc.Features.AddTurn(hubCurve,,,)
+hubTurn.SetAttribute(eAID_DoRough,,False,False,)
+hubTurn.Operations(1).OverrideSpeed(turnsfm,)
+hubTurn.Operations(1).OverrideFeed(.012,)
+hubTurn.Operations(1).SetAttribute(eAID_TurnStartPt,,hubStartpt,False,)
+hubTurn.Operations(1).SetAttribute(eAID_TurnEndPt,,hubEndpt,False,)
+hubTurn.Operations(1).OverrideTool(trepantool,)
+hubTurn.Name = "fin_hub_dia"
 
-	Set groove2 = doc.Features.AddProfileTurnGroove(curve12,,eGO_Face,,)
-		groove2.SetAttribute(eAID_DoRough,,False,False,)
-		groove2.Operations(1).SetAttribute(eAID_TurnFinishLiftoffDist,,.02,,)
-		groove2.Operations(1).OverrideSpeed(groovesfm,)
-		groove2.Operations(1).OverrideFeed(grooveipr,)
-		groove2.Operations(1).OverrideTool(trepantool,)
-		groove2.Operations(1).SetAttribute(eAID_TurnStartPt,,groove2startpt,False,)
-		groove2.Operations(1).SetAttribute(eAID_TurnEndPt,,groove2endpt,False,)
-		groove2.Name = "finish_trepan"
+'rough match trepan
+Dim rghMatchEndpt
 
-	End If
+rghMatchEndpt = "pt(" & trepan_od/2-.03-toolrad2-Sin(45*pi/180)*.025 & ",0," & -trepan_depth+.03+toolrad2+Cos(45*pi/180)*.025 &")"
+
+Dim rghMatchCurveL As FMCurvePtList
+Dim rghMatchCurve As FMCurve
+
+Set rghMatchCurveL = doc.CreateCurvePtList
+    rghMatchCurveL.AddPt(trepan_od/2,0,0)
+    rghMatchCurveL.AddPt(trepan_od/2,0,-trepan_depth)
+    rghMatchCurveL.AddPt(trepan_od/2-trepan_depth/(Tan(28*pi/180)),0,-trepan_depth)
+Set rghMatchCurve = rghMatchCurveL.AddCurveFromPtList(False)
+
+Dim rghMatchBore As FMBore
+
+Set rghMatchBore = doc.Features.AddBore(rghMatchCurve,UhhLine,,)
+    rghMatchBore.SetAttribute(eAID_DoFinish,,False,False,)
+    rghMatchBore.Operations(1).SetAttribute(eAID_TurnRoughDOC,,trepandoc,False,)
+    rghMatchBore.Operations(1).SetAttribute(eAID_MinXBound,,trepan_od/2-trepan_depth/(Tan(28*pi/180)),False,)
+    rghMatchBore.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,.03,False,)
+    rghMatchBore.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,.03,False,)
+    rghMatchBore.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
+    rghMatchBore.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
+    rghMatchBore.Operations(1).SetAttribute(eAID_TurnEndPt,,rghMatchEndpt,False,)
+    rghMatchBore.Operations(1).OverrideSpeed(boresfm,)
+    rghMatchBore.Operations(1).OverrideFeed(.012,)
+    rghMatchBore.Operations(1).OverrideTool(boretool,)
+    rghMatchBore.Name = "rough_rghMatch_trepan"
+
+'finish match trepan
+Dim finMatchStartpt, finMatchEndpt As String
+
+finMatchStartpt = "pt(" & trepan_od/2-trepan_depth/(Tan(28*pi/180))-.1-Sin(45*pi/180)*(.1+toolrad2-Sin(45*pi/180)*(toolrad2)) & ",0," & toolrad2-.05+Cos(45*pi/180)*(.1+toolrad2-Cos(45*pi/180)*(toolrad2)) &")"
+finMatchEndpt = "pt(" & trepan_od/2-.03-toolrad2-Sin(45*pi/180)*(toolrad2+.1) & ",0," & trepan_depth-.05+Cos(45*pi/180)*(.1+toolrad3*2) &")"
+
+Dim finMatchCurveL As FMCurvePtList
+Dim finMatchCurve As FMCurve
+
+Set finMatchCurveL = doc.CreateCurvePtList
+    finMatchCurveL.AddPt(trepan_od/2-.03,0,-trepan_depth + .05)
+    finMatchCurveL.AddPt(trepan_od/2-.03,0,-trepan_depth)
+    finMatchCurveL.AddPt(trepan_od/2-trepan_depth/(Tan(28*pi/180))-.1,0,-trepan_depth)
+Set finMatchCurve = finMatchCurveL.AddCurveFromPtList(False)
+
+Dim finMatchBore As FMBore
+
+Set finMatchBore = doc.Features.AddBore(finMatchCurve,,,)
+    finMatchBore.SetAttribute(eAID_DoRough,,False,False,)
+    finMatchBore.SetAttribute(eAID_TurnCycleType,,1,False,) 'change cycle from bore to face
+    finMatchBore.SetAttribute(eAID_TurnReverseFinish,,True,,) 'change feed direction from negative to positive
+    finMatchBore.Operations(1).SetAttribute(eAID_TurnEngageAng,,45,False,)
+    finMatchBore.Operations(1).SetAttribute(eAID_TurnStartPt,,finMatchStartpt,False,)
+    finMatchBore.Operations(1).SetAttribute(eAID_TurnEndPt,,finMatchEndpt,False,)
+    finMatchBore.Operations(1).OverrideSpeed(boresfm,)
+    finMatchBore.Operations(1).OverrideFeed(.012,)
+    finMatchBore.Operations(1).OverrideTool(boretool,)
+    finMatchBore.Name = "fin_match_trepan"
+
+'finish outer trepan dia
+Dim finOuterStartpt, finOuterEndpt
+
+finOuterStartpt = "pt(" & trepan_od/2+.02+Sin(45*pi/180)*(.1) & ",0," & Cos(45*pi/180)*(.1+toolrad2*2) &")"
+finOuterEndpt = "pt(" & trepan_od/2-.09-Sin(45*pi/180)*(toolrad2+.1) & ",0," & Cos(45*pi/180)*(.1+toolrad2*2) &")"
+
+Dim finOuterCurveL As FMCurvePtList
+Dim finOuterCurve As FMCurve
+
+Set finOuterCurveL = doc.CreateCurvePtList
+    finOuterCurveL.AddPt(trepan_od/2+.02,0,0)
+    finOuterCurveL.AddPt(trepan_od/2,0,-.02)
+    finOuterCurveL.AddPt(trepan_od/2,0,-trepan_depth)
+    finOuterCurveL.AddPt(trepan_od/2-.09,0,-trepan_depth)
+Set finOuterCurve = finOuterCurveL.AddCurveFromPtList(False)
+
+Dim finBore As FMBore
+
+Set finBore = doc.Features.AddBore(finOuterCurve,,,)
+    finBore.SetAttribute(eAID_DoRough,,False,False,)
+    finBore.Operations(1).SetAttribute(eAID_TurnStartPt,,finOuterStartpt,False,)
+    finBore.Operations(1).SetAttribute(eAID_TurnEndPt,,finOuterEndpt,False,)
+    finBore.Operations(1).OverrideSpeed(boresfm,)
+    finBore.Operations(1).OverrideFeed(.012,)
+    finBore.Operations(1).OverrideTool(boretool,)
+    finBore.Name = "fin_outer_trepan_dia"
+
+Else
+
+toolrad3 = .03
+trepantool = ".250 w (.03 tnr) M/Cr Face"
+trepanwidth = .25
+
+'rough trepan
+Dim rghEndpt As String
+
+rghEndpt = "pt(" & trepan_id/2+.05+toolrad3 & ",0," & .1+toolrad3 &")"
+
+Dim curveL As FMCurvePtList
+Dim curve As FMCurve
+
+Set curveL = doc.CreateCurvePtList
+    curveL.AddPt(trepan_od/2,0,0)
+    curveL.AddPt(trepan_od/2,0,-trepan_depth)
+    curveL.AddPt(trepan_id/2,0,-trepan_depth)
+    curveL.AddPt(trepan_id/2,0,0)
+Set curve = curveL.AddCurveFromPtList(False)
+
+Dim rghGroove As FMTurnGroove
+
+Set rghGroove = doc.Features.AddProfileTurnGroove(rghCurve,,eGO_Face,,)
+    rghGroove.SetAttribute(eAID_DoFinish,,False,False,)
+    rghGroove.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,.05,False,)
+    rghGroove.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,.01,False,)
+    rghGroove.Operations(1).SetAttribute(eAID_TurnGrvRoughDOC,,5,,)
+    rghGroove.Operations(1).OverrideTool(trepantool,)
+    rghGroove.Operations(1).SetAttribute(eAID_TurnEndPt,,rghEndpt,False,)
+    rghGroove.Name = "rough_trepan"
+
+'finish trepan
+Dim finStartpt, finEndpt As String
+
+finStartpt = "pt(" & trepan_id/2-.02+Sin(45*pi/180)*toolrad3 & ",0," & .1+toolrad3 &")"
+finEndpt = "pt(" & trepan_id/2+.02+toolrad3 & ",0," & .1+toolrad3 &")"
+
+Dim finCurveL As FMCurvePtList
+Dim finCurve As FMCurve
+
+Set finCurveL = doc.CreateCurvePtList
+    finCurveL.AddPt(trepan_od/2+.02,0,0)
+    finCurveL.AddPt(trepan_od/2,0,-.02)
+    finCurveL.AddPt(trepan_od/2,0,-trepan_depth)
+    finCurveL.AddPt(trepan_id/2,0,-trepan_depth)
+    finCurveL.AddPt(trepan_id/2,0,-.02)
+    finCurveL.AddPt(trepan_id/2-.02,0,0)
+Set finCurve = finCurveL.AddCurveFromPtList(False)
+
+Dim finGroove As FMTurnGroove
+
+Set finGroove = doc.Features.AddProfileTurnGroove(finCurve,,eGO_Face,,)
+    finGroove.SetAttribute(eAID_DoRough,,False,False,)
+    finGroove.Operations(1).SetAttribute(eAID_TurnFinishLiftoffDist,,.02,,)
+    finGroove.Operations(1).OverrideSpeed(groovesfm,)
+    finGroove.Operations(1).OverrideFeed(grooveipr,)
+    finGroove.Operations(1).OverrideTool(trepantool,)
+    finGroove.Operations(1).SetAttribute(eAID_TurnStartPt,,finStartpt,False,)
+    finGroove.Operations(1).SetAttribute(eAID_TurnEndPt,,finEndpt,False,)
+    finGroove.Name = "finish_trepan"
+
+End If
 
 
 End Sub
@@ -1046,29 +1113,32 @@ Private Sub InitializeDoc
 
 	End If
 
+
 End Sub
 
 Private Sub CreateFeature
+
+	Call Setup(1)
 'geometry for profile
 	CreateRoughGeo
 
 'turn scale off forgings
 	If chkforging = 1 Then
 
-		Call CleanOD_Op(front)
+		Call CleanOD_Op("front")
 
 	End If
 
 'face 1st side
-	FrontFace_Op
+	Call Face_Op("front")
 
 
 'rough turn
-	RoughOD_Op
+	Call RoughOD_Op("front")
 
 
 'fin turn
-	FinishOD_Op
+	Call FinishOD_Op("front")
 
 
 'rough bore
@@ -1076,7 +1146,7 @@ Private Sub CreateFeature
 
 
 'finish bore
-	FinishBore_Op
+	Call FinishBore_Op("front")
 
 
 '***************************************** 2nd side **********************************************
@@ -1085,90 +1155,18 @@ Private Sub CreateFeature
  	Call Setup(2)
 
 'turn scale off forgings
-	Call CleanOD_Op(back)
-
+	Call CleanOD_Op("back")
 
 'face 2nd side
-	BackFace_Op
+	Call Face_Op("back")
 
 '************************************************************************************************
 
 'rough turn o.d. 2nd side
-'figures rough turn depth of cut for setting start point on 2nd side                      >.000000001 is used because even # of passes was rounding up
-	If chkforging = 1 Then
-		If stock_od/2+.1-od/2-fin_allow > .125 Then
-			If ((stock_od/2+.1-od/2-.125-fin_allow)/od_doc) - Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0) > .00000001 Then
-				turn5passes = Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0)+1
-			Else
-				turn5passes = Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0)
-			End If
-		End If
-
-	Else
-
-		If ((stock_od/2+.1-od/2-fin_allow)/od_doc) - Round(((stock_od/2+.1-od/2-fin_allow)/od_doc),0) > .00000001 Then
-			turn5passes = Round(((stock_od/2+.1-od/2-fin_allow)/od_doc),0)+1
-		Else
-			turn5passes = Round(((stock_od/2+.1-od/2-fin_allow)/od_doc),0)
-		End If
-
-	End If
-
-	If chkforging = 1 Then
-		If stock_od/2+.1-od/2-fin_allow > .125 Then
-			turn5doc = (stock_od/2+.1-od/2-fin_allow-.125) / turn5passes
-		End If
-	Else
-		turn5doc = (stock_od/2+.1-od/2-fin_allow) / turn5passes
-	End If
-
-	turn5startpt = "pt(" & od/2+fin_allow+toolrad1+(turn5passes-1)*turn5doc & ",0,.1)"
-	turn5endpt = "pt(" & od/2+fin_allow+toolrad1+Sin(45*pi/180)*.025 & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
-
-	'If chkforging = 1 And stock_od/2+.1-od/2-fin_allow < .125001 Then
-
-		'Else
-
-	Set curveptlist7 = doc.CreateCurvePtList
-		curveptlist7.AddPt(od/2,0,0)
-		curveptlist7.AddPt(od/2,0,-oal/2-.014+.05)
-	Set curve7 = curveptlist7.AddCurveFromPtList(False)
-
-	Set turn5 = doc.Features.AddTurn(curve7,,,)
-		turn5.SetAttribute(eAID_TurnDoFinish,,False)
-		turn5.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,fin_allow,False,)
-		turn5.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,0,False,)
-		turn5.Operations(1).SetAttribute(eAID_TurnRoughDOC,,od_doc,False,)
-		turn5.Operations(1).OverrideTool(turntool)
-		turn5.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
-		turn5.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
-		'turn5.Operations(1).SetAttribute(eAID_TurnStartPt,,turn5startpt,False,)
-		'turn5.Operations(1).SetAttribute(eAID_TurnEndPt,,turn5endpt,False,)
-		turn5.Operations(1).OverrideSpeed(turnsfm,)
-		turn5.Operations(1).OverrideFeed(turnipr,)
-		If chkforging = 1 Then
-		turn5.Operations(1).SetAttribute(eAID_MaxXBound,,stock_od/2+.1-.125,False,)
-		End If
-		turn5.Name = "rough_od_"
-	'End If
+	Call RoughOD_Op("back")
 
 'fin turn
-	turn6startpt = "pt(" & od/2+toolrad1-.02-Sin(45*pi/180)*(.1)-toolrad1 & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
-	turn6endpt = "pt(" & od/2+toolrad1+Sin(45*pi/180)*(.1+toolrad1) & ",0," & -oal/2-.014+.05+Cos(45*pi/180)*(.1+toolrad1) &")"
-	Set curveptlist8 = doc.CreateCurvePtList
-	curveptlist8.AddPt(od/2-.02,0,0)
-	curveptlist8.AddPt(od/2,0,-.02)
-	curveptlist8.AddPt(od/2,0,-oal/2-.014+.05)
-	Set curve8 = curveptlist8.AddCurveFromPtList(False)
-
-	Set turn6 = doc.Features.AddTurn(curve8,,,)
-	turn6.SetAttribute(eAID_TurnDoRough,,False,False,)
-	'turn6.Operations(1).SetAttribute(eAID_TurnStartPt,,turn6startpt,False,)
-	'turn6.Operations(1).SetAttribute(eAID_TurnEndPt,,turn6endpt,False,)
-	turn6.Operations(1).OverrideSpeed(turnsfm,)
-	turn6.Operations(1).OverrideFeed(turnipr,)
-	turn6.Operations(1).OverrideTool(turntool)
-	turn6.Name = "fin_od_"
+	Call FinishOD_Op("back")
 
 '***************************************** trepan **********************************************
 
@@ -1180,34 +1178,7 @@ Private Sub CreateFeature
 '***************************************** fin bore **********************************************
 
 'finish bore or chfr bore
-	Set curveptlist9 = doc.CreateCurvePtList
-		curveptlist9.AddPt(id/2+.02,0,0)
-		curveptlist9.AddPt(id/2,0,-.02)
-	If optfeatures = 1 Then
-		curveptlist9.AddPt(id/2,0,-oal-.05)
-	Else
-		curveptlist9.AddPt(id/2,0,-.03)
-	End If
-	Set curve9 = curveptlist9.AddCurveFromPtList(False)
-
-	Set bore3 = doc.Features.AddBore(curve9,,,)
-
-		If dlgmachine = "5506" Then
-			bore3.SetAttribute(eAID_BelowCenterline,,True)
-		End If
-
-		bore3.SetAttribute(eAID_TurnDoRough,,False,False,)
-		bore3.Operations(1).OverrideSpeed(boresfm,)
-		bore3.Operations(1).OverrideFeed(boreipr,)
-		bore3.Operations(1).OverrideTool(boretool,)
-	If optfeatures = 1 Then
-		bore3.Name = "finish_bore"
-		bore3.Operations(1).SetAttribute(eAID_MinZBound,,.05,False,)
-	Else
-		bore3startpt = "pt(" & id/2+.02+Sin(45*pi/180)*(.1) & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
-		bore3.Operations(1).SetAttribute(eAID_TurnStartPt,,bore3startpt,False,)
-		bore3.Name = "chfr_bore"
-	End If
+	Call FinishBore_Op("back")
 
 '***************************************** ecc bore **********************************************
 
@@ -1216,35 +1187,23 @@ Private Sub CreateFeature
 	Call Setup(3)
 
 'ecc bore
-	Set curveptlist10 = doc.CreateCurvePtList
-		curveptlist10.AddPt(id/2+.02,0,0)
-		curveptlist10.AddPt(id/2,0,-.02)
-		curveptlist10.AddPt(id/2,0,-oal-.05)
-	Set curve10 = curveptlist10.AddCurveFromPtList(False)
-
-	Set bore4 = doc.Features.AddBore(curve10,,,)
-
-		If dlgmachine = "5506" Then
-			bore4.SetAttribute(eAID_BelowCenterline,,True)
-		End If
-
-		bore4.SetAttribute(eAID_TurnDoRough,,False,False,)
-		bore4.Operations(1).SetAttribute(eAID_MinZBound,,.05,False,)
-		bore4.Operations(1).OverrideSpeed(boresfm,)
-		bore4.Operations(1).OverrideFeed(boreipr,)
-		bore4.Operations(1).OverrideTool(boretool,)
-		bore4.Name = "ecc_bore"
+	Eccentric_Op
 
 	End If
 
+'Finish Document
+	FinishUp
 
+End Sub
 
+Private Sub FinishUp
 
 	doc.PartDocumentation.Title = part_number
 	doc.PartDocumentation.Author = writer
 	doc.PartDocumentation.Note1 = revision
 	doc.PartDocumentation.Note2 = operation
 
+	Dim Setup As FMSetup
 
 	For Each Setup In doc.Setups
 		Setup.PartName = program_number
@@ -1252,7 +1211,7 @@ Private Sub CreateFeature
 
 	doc.InvalidateAll
 
-	setup1.Activate
+	Setup.Item(1).Activate
 	'ActiveDocument.SetView(eVT_Top)
 	ActiveDocument.SetView(eVT_Isometric)
 	'ActiveDocument.Sim3DActiveSetups
@@ -1291,12 +1250,13 @@ Private Sub Setup(opt As Integer)
 
         Dim stock As FMStock
 
+        Set stock = doc.Stock
         stock.SetDimensions(eST_Round,oal+face_1st+face_2nd,,,stock_od+.2,stock_id,eAT_AxisZ,,)
         stock.SetLocation(0,0,face_1st)
         stock.SingleProgram = False
         ActiveDocument.SetView(eVT_CenterAll)
 
-    Else If opt = 2 Then
+    ElseIf opt = 2 Then
 
         Dim setup2 As FMSetup
 
@@ -1329,153 +1289,205 @@ Private Sub CreateRoughGeo
 
     Dim FrontLine As FMLine
     Dim IDLine As FMLine
-    Dim BackLine As FMLine
+    Dim backLine As FMLine
     Dim ODLine As FMLine
 
     Set FrontLine = doc.Geometry.AddLine2Points(od/2,0,0,id/2,0,0)
     Set IDLine = doc.Geometry.AddLine2Points(id/2,0,0,id/2,0,-oal)
-    Set BackLine = doc.Geometry.AddLine2Points(id/2,0,-oal,od/2,0,-oal)
+    Set backLine = doc.Geometry.AddLine2Points(id/2,0,-oal,od/2,0,-oal)
     Set ODLine = doc.Geometry.AddLine2Points(od/2,0,-oal,od/2,0,0)
 
 End Sub
 
-Private Sub CleanOD_Op(opt As String)
+Private Sub Face_Op(opt As String)
+
+If opt = "front" Then
+
+	Dim frontPasses As Integer
+	Dim endpt,startpt, semiendpt As String
+	Dim frontFace1 As FMTurnFace
+	Dim frontFace2 As FMTurnFace
+
+	If (face_1st/face_doc) - Round((face_1st/face_doc),0) > .00000001 Then
+	    frontPasses = Round((face_1st/face_doc),0)+1
+	Else
+	    frontPasses = Round((face_1st/face_doc),0)
+	End If
+
+	If frontPasses = 1 Then
+
+	    'endpt = "pt(" & stock_id/2-.1+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
+	    endpt = "pt(" & stock_od/2 + fin_allow + toolrad1 + .1 & ",0,.1)"
+
+	    Set frontFace1 = doc.Features.AddTurnFace(face_1st,True,stock_od+.2,stock_id-.2,,False)
+	        frontFace1.SetAttribute(eAID_DoRough,,False)
+	        frontFace1.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
+	        frontFace1.Operations(1).OverrideSpeed(turnsfm,)
+	        frontFace1.Operations(1).OverrideFeed(turnipr,)
+	        frontFace1.Operations(1).OverrideTool(turntool,)
+	        frontFace1.Name = "fin_face"
+
+	ElseIf frontPasses = 2 Then
+
+	    semiendpt = "pt(" & stock_id/2-.1+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
+	    Set frontFace1 = doc.Features.AddTurnFace(face_1st/2,True,stock_od+.2,stock_id-.2,,False)
+	        frontFace1.SetFeatureLocation(eFLT_xyz,0,0,face_1st/2,0,0,0,0,,,,,)
+	        frontFace1.SetAttribute(eAID_DoRough,,False)
+	        'frontFace1.Operations(1).SetAttribute(eAID_TurnEndPt,,semiendpt,False,)
+	        frontFace1.Operations(1).OverrideSpeed(turnsfm,)
+	        frontFace1.Operations(1).OverrideFeed(turnipr,)
+	        frontFace1.Operations(1).OverrideTool(turntool,)
+	        frontFace1.Name = "semi_face"
+
+	    endpt = "pt(" & stock_id/2-.1+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
+	    Set frontFace2 = doc.Features.AddTurnFace(face_1st/2,True,stock_od+.2,stock_id-.2,,False)
+	        frontFace2.SetAttribute(eAID_TurnDoRough,,False,False,)
+	        'frontFace2.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
+	        frontFace2.Operations(1).OverrideSpeed(turnsfm,)
+	        frontFace2.Operations(1).OverrideFeed(turnipr,)
+	        frontFace2.Operations(1).OverrideTool(turntool,)
+	        frontFace2.Name = "fin_face"
+
+	Else
+
+	    endpt = "pt(" & stock_id/2-.1+Sin(45*pi/180)*(.025) & ",0," & toolrad1+face_1st/frontPasses+Cos(45*pi/180)*(.025) &")"
+	    Set  frontFace1 = doc.Features.AddTurnFace(face_1st,True,stock_od+.2,stock_id-.2,,False)
+	        frontFace1.SetAttribute(eAID_DoRough,,False)
+	        frontFace1.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,0,False,)
+	        frontFace1.Operations(1).SetAttribute(eAID_TurnRoughDOC,,face_doc,False,)
+	        frontFace1.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
+	        'frontFace1.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
+	        frontFace1.Operations(1).OverrideSpeed(turnsfm,)
+	        frontFace1.Operations(1).OverrideFeed(turnipr,)
+	        frontFace1.Operations(1).OverrideTool(turntool,)
+	        frontFace1.Name = "fin_face"
+
+	End If
+
+	If chkforging = 1 Then
+
+	    frontFace1.SetOuterDiameter(stock_od+.2-.25,,False)
+	    If frontPasses=2 Then
+	        frontFace2.SetOuterDiameter(stock_od+.2-.25,,False)
+	    End If
+	    If frontPasses <3 Then
+	        startpt = "pt(" & stock_od/2+.1-.125+toolrad1+.1 & ",0," & toolrad1 &")"
+	    Else
+	        startpt = "pt(" & stock_od/2+.1-.125+.1 & ",0," & face_1st-face_1st/frontPasses+toolrad1 &")"
+
+	    End If
+	    'frontFace.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
+	    If frontPasses=2 Then
+	        frontFace2.Order = 3
+	    End If
+	    frontFace1.Order = 2
+
+	End If
+
+ElseIf opt = "back" Then
+
+	Dim backPasses As Integer
+
+	If (face_2nd/face_doc) - Round((face_2nd/face_doc),0) > .00000001 Then
+	    backPasses = Round((face_2nd/face_doc),0)+1
+	Else
+	    backPasses = Round((face_2nd/face_doc),0)
+	End If
+
+	Dim backsemiendpt, backendpt As String
+	Dim semiFace, finFace As FMTurnFace
+
+	If backPasses = 1 Then
+
+		backendpt = "pt(" & id/2-.05+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
+
+		Set finFace = doc.Features.AddTurnFace(face_2nd,True,stock_od+.2,id-.1,,False)
+		    finFace.SetAttribute(eAID_DoRough,,False)
+		    finFace.Operations(1).SetAttribute(eAID_TurnEndPt,,backendpt,False,)
+		    finFace.Operations(1).OverrideSpeed(turnsfm,)
+		    finFace.Operations(1).OverrideFeed(turnipr,)
+		    finFace.Operations(1).OverrideTool(turntool,)
+		    finFace.Name = "fin_face_"
+
+	ElseIf backPasses = 2 Then
+
+		backsemiendpt = "pt(" & id/2-.05+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
+
+		Set semiFace = doc.Features.AddTurnFace(face_2nd/2,True,stock_od+.2,id-.1,,False)
+		    semiFace.SetFeatureLocation(eFLT_xyz,0,0,face_2nd/2,0,0,0,0,,,,,)
+		    semiFace.SetAttribute(eAID_DoRough,,False,False,)
+		    semiFace.Operations(1).SetAttribute(eAID_TurnEndPt,,backsemiendpt,False,)
+		    semiFace.Operations(1).OverrideSpeed(turnsfm,)
+		    semiFace.Operations(1).OverrideFeed(turnipr,)
+		    semiFace.Operations(1).OverrideTool(turntool,)
+		    semiFace.Name = "semi_face_"
+
+		backendpt = "pt(" & id/2-.05+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
+
+		Set finFace = doc.Features.AddTurnFace(face_2nd/2,True,stock_od+.2,id-.1,,False)
+		    finFace.SetAttribute(eAID_DoRough,,False,False,)
+		    'finFace.Operations(1).SetAttribute(eAID_TurnEndPt,,backendpt,False,)
+		    finFace.Operations(1).OverrideSpeed(turnsfm,)
+		    finFace.Operations(1).OverrideFeed(turnipr,)
+		    finFace.Operations(1).OverrideTool(turntool,)
+		    finFace.Name = "fin_face_"
+
+	Else
+
+		backendpt = "pt(" & id/2-.05+Sin(45*pi/180)*(.025) & ",0," & toolrad1+face_2nd/backPasses+Cos(45*pi/180)*(.025) &")"
+
+		Set finFace = doc.Features.AddTurnFace(face_2nd,True,stock_od+.2,id-.1,,False)
+		    finFace.SetAttribute(eAID_DoFinish,,False,False,)
+		    finFace.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,0,False,)
+		    finFace.Operations(1).SetAttribute(eAID_TurnRoughDOC,,face_doc,False,)
+		    finFace.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
+		    finFace.Operations(1).SetAttribute(eAID_TurnEndPt,,backendpt,False,)
+		    finFace.Operations(1).OverrideSpeed(turnsfm,)
+		    finFace.Operations(1).OverrideFeed(turnipr,)
+		    finFace.Operations(1).OverrideTool(turntool,)
+		    finFace.Name = "fin_face_"
+
+	End If
+
+	If chkforging = 1 Then
+	    finFace.SetOuterDiameter(stock_od+.2-.25,,False)
+	    If backPasses=2 Then
+	        semiFace.SetOuterDiameter(stock_od+.2-.25,,False)
+	    End If
+	    Dim backFinStartpt As String
+	    If backPasses <3 Then
+	        backFinStartpt = "pt(" & stock_od/2+.1-.125+toolrad1+.1 & ",0," & toolrad1 &")"
+	    Else
+	        backFinStartpt = "pt(" & stock_od/2+.1-.125+.1 & ",0," & face_2nd-face_2nd/backPasses+toolrad1 &")"
+
+	    End If
+	    finFace.Operations(1).SetAttribute(eAID_TurnStartPt,,backFinStartpt,False,)
+	    If backPasses=2 Then
+	        semiFace.Order = 3
+	    End If
+	    finFace.Order = 2
+
+	End If
+
+End If
+End Sub
+
+Private Sub RoughOD_Op(opt As String)
 
 	If opt = "front" Then
-	Dim curveL As FMCurvePtList
-    Dim curve As FMCurve
-    Dim turn As FMTurn
-    Dim endpt As String
 
-	Set curveL = doc.CreateCurvePtList
-	  curveL.AddPt(stock_od/2+.1-.125,0,face_1st)
-	  curveL.AddPt(stock_od/2+.1-.125,0,-oal/2-.014-.05)
-	Set curve = curveL.AddCurveFromPtList(False)
+	    Dim passes As Integer
+	    'figures rough turn depth of cut for setting start point on 1st side                      >.000000001 is used because even # of passes was rounding up
+	    If chkforging = 1 Then
+	        If stock_od/2+.1-od/2-fin_allow > .125 Then
+	            If ((stock_od/2+.1-od/2-.125-fin_allow)/od_doc) - Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0) > .00000001 Then
+	                passes = Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0)+1
+	            Else
+	                passes = Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0)
+	            End If
+	        End If
 
-	  If stock_od/2+.1-od/2-fin_allow > .125 Then
-	    endpt = "pt(" & stock_od/2+.1-.125+toolrad1+Sin(45*pi/180)*.025 & ",0," & -oal/2-.014-.05-face_1st+Cos(45*pi/180)*.025 &")"
-	  Else
-	    endpt = "pt(" & stock_od/2+.1-.125+fin_allow+toolrad1+Sin(45*pi/180)*.025 & ",0," & -oal/2-.014-.05-face_1st+Cos(45*pi/180)*.025 &")"
-	  End If
-
-	Set turn = doc.Features.AddTurn(curve3,,,)
-	  turn.SetAttribute(eAID_TurnDoFinish, ,False)
-	  If stock_od/2+.1-od/2-fin_allow > .125 Then
-	    turn.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,0,False,)
-	  Else
-	    turn.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,fin_allow,False,)
-	  End If
-	  turn.Operations(1).SetAttribute(eAID_TurnRoughDOC,,.125,False,)
-	  turn.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,0,False,)
-	  turn.Operations(1).SetAttribute(eAID_TurnClearance,,.2,False,)
-	  turn.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
-	  turn.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
-	  turn.Operations(1).SetAttribute(eAID_TurnEndPt,,turn3endpt,False,)
-	  turn.Operations(1).OverrideSpeed(turnsfm,)
-	  turn.Operations(1).OverrideFeed(turnipr,)
-	  turn.Operations(1).OverrideTool(turntool,)
-	  turn.Name = "clean_od"
-
-End Sub
-
-Private Sub FrontFace_Op
-
-    Dim passes As Integer
-    Dim endpt,startpt As String
-    Dim frontFace1 As FMTurnFace
-    Dim frontFace2 As FMTurnFace
-
-    If (face_1st/face_doc) - Round((face_1st/face_doc),0) > .00000001 Then
-            passes = Round((face_1st/face_doc),0)+1
-        Else
-            passes = Round((face_1st/face_doc),0)
-        End If
-
-    If passes = 1 Then
-
-        'endpt = "pt(" & stock_id/2-.1+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
-        endpt = "pt(" & stock_od/2 + fin_allow + toolrad1 + .1 & ",0,.1)"
-
-        Set frontFace1 = doc.Features.AddTurnFace(face_1st,True,stock_od+.2,stock_id-.2,,False)
-            frontFace1.SetAttribute(eAID_DoRough,,False)
-            frontFace1.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
-            frontFace1.Operations(1).OverrideSpeed(turnsfm,)
-            frontFace1.Operations(1).OverrideFeed(turnipr,)
-            frontFace1.Operations(1).OverrideTool(turntool,)
-            frontFace1.Name = "fin_face"
-
-    ElseIf passes = 2 Then
-
-        endpt = "pt(" & stock_id/2-.1+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
-        Set frontFace1 = doc.Features.AddTurnFace(face_1st/2,True,stock_od+.2,stock_id-.2,,False)
-            frontFace1.SetFeatureLocation(eFLT_xyz,0,0,face_1st/2,0,0,0,0,,,,,)
-            frontFace1.SetAttribute(eAID_DoRough,,False)
-            'frontFace1.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
-            frontFace1.Operations(1).OverrideSpeed(turnsfm,)
-            frontFace1.Operations(1).OverrideFeed(turnipr,)
-            frontFace1.Operations(1).OverrideTool(turntool,)
-            frontFace1.Name = "semi_face"
-
-        face3endpt = "pt(" & stock_id/2-.1+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
-        Set frontFace2 = doc.Features.AddTurnFace(face_1st/2,True,stock_od+.2,stock_id-.2,,False)
-            frontFace2.SetAttribute(eAID_TurnDoRough,,False,False,)
-            'frontFace2.Operations(1).SetAttribute(eAID_TurnEndPt,,face3endpt,False,)
-            frontFace2.Operations(1).OverrideSpeed(turnsfm,)
-            frontFace2.Operations(1).OverrideFeed(turnipr,)
-            frontFace2.Operations(1).OverrideTool(turntool,)
-            frontFace2.Name = "fin_face"
-
-    Else
-
-        endpt = "pt(" & stock_id/2-.1+Sin(45*pi/180)*(.025) & ",0," & toolrad1+face_1st/passes+Cos(45*pi/180)*(.025) &")"
-        Set  frontFace1 = doc.Features.AddTurnFace(face_1st,True,stock_od+.2,stock_id-.2,,False)
-            frontFace1.SetAttribute(eAID_DoRough,,False)
-            frontFace1.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,0,False,)
-            frontFace1.Operations(1).SetAttribute(eAID_TurnRoughDOC,,face_doc,False,)
-            frontFace1.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
-            'frontFace1.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
-            frontFace1.Operations(1).OverrideSpeed(turnsfm,)
-            frontFace1.Operations(1).OverrideFeed(turnipr,)
-            frontFace1.Operations(1).OverrideTool(turntool,)
-            frontFace1.Name = "fin_face"
-
-    End If
-
-    If chkforging = 1 Then
-
-        frontFace1.SetOuterDiameter(stock_od+.2-.25,,False)
-        If passes=2 Then
-            frontFace2.SetOuterDiameter(stock_od+.2-.25,,False)
-        End If
-        If passes <3 Then
-            startpt = "pt(" & stock_od/2+.1-.125+toolrad1+.1 & ",0," & toolrad1 &")"
-        Else
-            startpt = "pt(" & stock_od/2+.1-.125+.1 & ",0," & face_1st-face_1st/passes+toolrad1 &")"
-
-        End If
-        'frontFace.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
-        If passes=2 Then
-            frontFace2.Order = 3
-        End If
-        frontFace1.Order = 2
-
-    End If
-End Sub
-
-Private Sub RoughOD_Op
-
-    Dim passes As Integer
-    'figures rough turn depth of cut for setting start point on 1st side                      >.000000001 is used because even # of passes was rounding up
-    If chkforging = 1 Then
-        If stock_od/2+.1-od/2-fin_allow > .125 Then
-            If ((stock_od/2+.1-od/2-.125-fin_allow)/od_doc) - Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0) > .00000001 Then
-                passes = Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0)+1
-            Else
-                passes = Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0)
-            End If
-        End If
-
-    Else
+	    Else
 
             If ((stock_od/2+.1-od/2-fin_allow)/od_doc) - Round(((stock_od/2+.1-od/2-fin_allow)/od_doc),0) > .00000001 Then
                 passes = Round(((stock_od/2+.1-od/2-fin_allow)/od_doc),0)+1
@@ -1483,88 +1495,181 @@ Private Sub RoughOD_Op
                 passes = Round(((stock_od/2+.1-od/2-fin_allow)/od_doc),0)
             End If
 
-    End If
+	    End If
 
-    Dim turndoc As Double
+	    Dim turndoc As Double
 
-    If chkforging = 1 Then
-        If stock_od/2+.1-od/2-fin_allow > .125 Then
-            turndoc = (stock_od/2+.1-od/2-fin_allow-.125) / passes
-        End If
+	    If chkforging = 1 Then
+	        If stock_od/2+.1-od/2-fin_allow > .125 Then
+	            turndoc = (stock_od/2+.1-od/2-fin_allow-.125) / passes
+	        End If
+	    Else
+	            turndoc = (stock_od/2+.1-od/2-fin_allow) / passes
+	    End If
+
+	    Dim startpt, endpt As String
+
+	    startpt = "pt(" & od/2+fin_allow+(passes-1)*turndoc & ",0,.1)"
+	    endpt = "pt(" & od/2+fin_allow+toolrad1+Sin(45*pi/180)*.025 & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
+
+	    'turnendpt = "pt(" & od/2+fin_allow+toolrad1 + .018 +Sin(45*pi/180)*.025 & ",0," & (.1+toolrad1*2) &")"
+
+	    'If chkforging = 1 And stock_od/2+.1-od/2-fin_allow < .125001 Then
+
+	    'Else
+
+	    Dim curveL As FMCurvePtList
+	    Dim curve As FMCurve
+
+	    Set curveL = doc.CreateCurvePtList
+	        curveL.AddPt(od/2,0,0)
+	        curveL.AddPt(od/2,0,-oal/2-.014-.05)
+	    Set curve = curveL.AddCurveFromPtList(False)
+
+	    Dim turn As FMTurn
+
+	    Set turn = doc.Features.AddTurn(curve,,,)
+
+	        turn.SetAttribute(eAID_TurnDoFinish,,False)
+	        turn.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,fin_allow,False,)
+	        turn.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,0,False,)
+	        turn.Operations(1).SetAttribute(eAID_TurnRoughDOC,,od_doc,False,)
+	        turn.Operations(1).OverrideTool(turntool,)
+	        turn.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
+	        turn.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
+	        turn.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
+	        turn.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
+	        turn.Operations(1).OverrideSpeed(turnsfm,)
+	        turn.Operations(1).OverrideFeed(turnipr,)
+	        If chkforging = 1 Then
+	        turn.Operations(1).SetAttribute(eAID_MaxXBound,,stock_od/2+.1-.125,False,)
+	        End If
+
+	        turn.Name = "rough_od"
+
+	    'End if
+
     Else
-            turndoc = (stock_od/2+.1-od/2-fin_allow) / passes
+
+'figures rough turn depth of cut for setting start point on 2nd side                      >.000000001 is used because even # of passes was rounding up
+	    Dim backpasses As Integer
+
+	    If chkforging = 1 Then
+			If stock_od/2+.1-od/2-fin_allow > .125 Then
+				If ((stock_od/2+.1-od/2-.125-fin_allow)/od_doc) - Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0) > .00000001 Then
+					backpasses = Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0)+1
+				Else
+					backpasses = Round(((stock_od/2+.1-od/2-.125-fin_allow)/od_doc),0)
+				End If
+			End If
+
+		Else
+
+			If ((stock_od/2+.1-od/2-fin_allow)/od_doc) - Round(((stock_od/2+.1-od/2-fin_allow)/od_doc),0) > .00000001 Then
+				backpasses = Round(((stock_od/2+.1-od/2-fin_allow)/od_doc),0)+1
+			Else
+				backpasses = Round(((stock_od/2+.1-od/2-fin_allow)/od_doc),0)
+			End If
+
+		End If
+
+	    Dim backturndoc As Double
+
+		If chkforging = 1 Then
+			If stock_od/2+.1-od/2-fin_allow > .125 Then
+				backturndoc = (stock_od/2+.1-od/2-fin_allow-.125) / backpasses
+			End If
+		Else
+			backturndoc = (stock_od/2+.1-od/2-fin_allow) / backpasses
+		End If
+
+		startpt = "pt(" & od/2+fin_allow+toolrad1+(passes-1)*backturndoc & ",0,.1)"
+		endpt = "pt(" & od/2+fin_allow+toolrad1+Sin(45*pi/180)*.025 & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
+
+		'If chkforging = 1 And stock_od/2+.1-od/2-fin_allow < .125001 Then
+
+			'Else
+	    Dim backcurveL As FMCurvePtList
+	    Dim backcurve As FMCurve
+
+		Set backcurveL = doc.CreateCurvePtList
+			backcurveL.AddPt(od/2,0,0)
+			backcurveL.AddPt(od/2,0,-oal/2-.014+.05)
+		Set backcurve = backcurveL.AddCurveFromPtList(False)
+
+	    Dim backTurn As FMTurn
+
+		Set backTurn = doc.Features.AddTurn(backcurve,,,)
+			backTurn.SetAttribute(eAID_TurnDoFinish,,False)
+			backTurn.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,fin_allow,False,)
+			backTurn.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,0,False,)
+			backTurn.Operations(1).SetAttribute(eAID_TurnRoughDOC,,od_doc,False,)
+			backTurn.Operations(1).OverrideTool(turntool)
+			backTurn.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
+			backTurn.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
+			'backTurn.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
+			'backTurn.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
+			backTurn.Operations(1).OverrideSpeed(turnsfm,)
+			backTurn.Operations(1).OverrideFeed(turnipr,)
+			If chkforging = 1 Then
+			backTurn.Operations(1).SetAttribute(eAID_MaxXBound,,stock_od/2+.1-.125,False,)
+			End If
+			backTurn.Name = "rough_od_"
+		'End If
+
     End If
-
-    Dim startpt, endpt As String
-
-    startpt = "pt(" & od/2+fin_allow+(passes-1)*turndoc & ",0,.1)"
-    endpt = "pt(" & od/2+fin_allow+toolrad1+Sin(45*pi/180)*.025 & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
-
-    'turnendpt = "pt(" & od/2+fin_allow+toolrad1 + .018 +Sin(45*pi/180)*.025 & ",0," & (.1+toolrad1*2) &")"
-
-    'If chkforging = 1 And stock_od/2+.1-od/2-fin_allow < .125001 Then
-
-    'Else
-
-    Dim curveL As FMCurvePtList
-    Dim curve As FMCurve
-
-    Set curveL = doc.CreateCurvePtList
-        curveL.AddPt(od/2,0,0)
-        curveL.AddPt(od/2,0,-oal/2-.014-.05)
-    Set curve = curveL.AddCurveFromPtList(False)
-
-    Dim turn As FMTurn
-
-    Set turn = doc.Features.AddTurn(curve1,,,)
-
-        turn.SetAttribute(eAID_TurnDoFinish,,False)
-        turn.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,fin_allow,False,)
-        turn.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,0,False,)
-        turn.Operations(1).SetAttribute(eAID_TurnRoughDOC,,od_doc,False,)
-        turn.Operations(1).OverrideTool(turntool,)
-        turn.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
-        turn.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
-        turn.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
-        turn.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
-        turn.Operations(1).OverrideSpeed(turnsfm,)
-        turn.Operations(1).OverrideFeed(turnipr,)
-        If chkforging = 1 Then
-        turn.Operations(1).SetAttribute(eAID_MaxXBound,,stock_od/2+.1-.125,False,)
-        End If
-
-        turn.Name = "rough_od"
-
-    'End if
 
 End Sub
 
-Private Sub FinishOD_Op
+Private Sub FinishOD_Op(opt As String)
 
-    Dim startpt, endpt As String
+	Dim startpt, endpt As String
+	Dim curveL As FMCurvePtList
+	Dim curve As FMCurve
+	Dim turn As FMTurn
 
-    startpt = "pt(" & od/2+toolrad1-.02-Sin(45*pi/180)*(.1)-toolrad1 & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
-    endpt = "pt(" & od/2+toolrad1+Sin(45*pi/180)*(.1+toolrad1) & ",0," & -oal/2-.014-.05+Cos(45*pi/180)*(.1+toolrad1) &")"
+	If opt = "front" Then
 
-    Dim curveL As FMCurvePtList
-    Dim curve As FMCurve
 
-    Set curveL = doc.CreateCurvePtList
-    curveL.AddPt(od/2-.02,0,0)
-    curveL.AddPt(od/2,0,-.02)
-    curveL.AddPt(od/2,0,-oal/2-.014-.05)
-    Set curve2 = curveL.AddCurveFromPtList(False)
 
-    Dim turn As FMTurn
+	    startpt = "pt(" & od/2+toolrad1-.02-Sin(45*pi/180)*(.1)-toolrad1 & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
+	    endpt = "pt(" & od/2+toolrad1+Sin(45*pi/180)*(.1+toolrad1) & ",0," & -oal/2-.014-.05+Cos(45*pi/180)*(.1+toolrad1) &")"
 
-    Set turn = doc.Features.AddTurn(curve2,,,)
-    turn.SetAttribute(eAID_TurnDoRough,,False)
-    turn.Operations(1).OverrideTool(turntool,)
-    turn.Operations(1).OverrideSpeed(turnsfm,)
-    turn.Operations(1).OverrideFeed(turnipr,)
-    turn.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
-    'turn.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
-    turn.Name = "fin_od"
+	    Set curveL = doc.CreateCurvePtList
+	    curveL.AddPt(od/2-.02,0,0)
+	    curveL.AddPt(od/2,0,-.02)
+	    curveL.AddPt(od/2,0,-oal/2-.014-.05)
+	    Set curve = curveL.AddCurveFromPtList(False)
+
+	    Set turn = doc.Features.AddTurn(curve,,,)
+	    turn.SetAttribute(eAID_TurnDoRough,,False)
+	    turn.Operations(1).OverrideTool(turntool,)
+	    turn.Operations(1).OverrideSpeed(turnsfm,)
+	    turn.Operations(1).OverrideFeed(turnipr,)
+	    turn.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
+	    'turn.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
+	    turn.Name = "fin_od"
+	Else
+
+		startpt = "pt(" & od/2+toolrad1-.02-Sin(45*pi/180)*(.1)-toolrad1 & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
+		endpt = "pt(" & od/2+toolrad1+Sin(45*pi/180)*(.1+toolrad1) & ",0," & -oal/2-.014+.05+Cos(45*pi/180)*(.1+toolrad1) &")"
+
+		Set curveL = doc.CreateCurvePtList
+		curveL.AddPt(od/2-.02,0,0)
+		curveL.AddPt(od/2,0,-.02)
+		curveL.AddPt(od/2,0,-oal/2-.014+.05)
+		Set curve = curveL.AddCurveFromPtList(False)
+
+		Set turn = doc.Features.AddTurn(curve,,,)
+		turn.SetAttribute(eAID_TurnDoRough,,False,False,)
+		'turn.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
+		'turn.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
+		turn.Operations(1).OverrideSpeed(turnsfm,)
+		turn.Operations(1).OverrideFeed(turnipr,)
+		turn.Operations(1).OverrideTool(turntool)
+		turn.Name = "fin_od_"
+
+	End If
 
 End Sub
 
@@ -1605,40 +1710,73 @@ Private Sub RoughBore_Op
 
 End Sub
 
-Private Sub FinishBore_Op
+Private Sub FinishBore_Op(opt As String)
 
-    Dim curveL As FMCurvePtList
-    Dim finishBoreCurve As FMCurve
+	Dim startpt As String
+	Dim curveL As FMCurvePtList
+	Dim curve As FMCurve
+	Dim bore As FMBore
 
-    Set curveL = doc.CreateCurvePtList
-        curveL.AddPt(id/2+bore_chfr,0,0)
-        curveL.AddPt(id/2-bore_allow,0,-bore_chfr-bore_allow)
-        curveL.AddPt(id/2-bore_allow,0,-oal-face_2nd-.05)
-    Set finishBoreCurve = curveL.AddCurveFromPtList(False)
+	If opt = "front" Then
 
-    Dim startpt As String
+	    Set curveL = doc.CreateCurvePtList
+	        curveL.AddPt(id/2+bore_chfr,0,0)
+	        curveL.AddPt(id/2-bore_allow,0,-bore_chfr-bore_allow)
+	        curveL.AddPt(id/2-bore_allow,0,-oal-face_2nd-.05)
+	    Set curve = curveL.AddCurveFromPtList(False)
 
-    startpt = "pt(" & id/2+bore_chfr+Sin(45*pi/180)*.1 & ",0," & Cos(45*pi/180)*(.1+toolrad2*2) &")"
+	    startpt = "pt(" & id/2+bore_chfr+Sin(45*pi/180)*.1 & ",0," & Cos(45*pi/180)*(.1+toolrad2*2) &")"
 
-    Dim bore As FMBore
+	    Set bore = doc.Features.AddBore(curve,,,)
 
-    Set bore = doc.Features.AddBore(finishBoreCurve,,,)
+	    If dlgmachine = "5506" Then
+	        bore.SetAttribute(eAID_BelowCenterline,,True)
+	    End If
 
-    If dlgmachine = "5506" Then
-        bore.SetAttribute(eAID_BelowCenterline,,True)
-    End If
+	    bore.SetAttribute(eAID_TurnDoRough,,False,False,)
+	    bore.Operations(1).SetAttribute(eAID_MinZBound,,-oal-face_2nd-.05,False,)
+	    bore.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
+	    bore.Operations(1).OverrideSpeed(boresfm,)
+	    bore.Operations(1).OverrideFeed(boreipr,)
+	    bore.Operations(1).OverrideTool(boretool,)
+	    If optfeatures = 1 Then
+	        bore.Name = "semi_bore"
+	    Else
+	        bore.Name = "finish_bore"
+	    End If
 
-    bore.SetAttribute(eAID_TurnDoRough,,False,False,)
-    bore.Operations(1).SetAttribute(eAID_MinZBound,,-oal-face_2nd-.05,False,)
-    bore.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
-    bore.Operations(1).OverrideSpeed(boresfm,)
-    bore.Operations(1).OverrideFeed(boreipr,)
-    bore.Operations(1).OverrideTool(boretool,)
-    If optfeatures = 1 Then
-        bore.Name = "semi_bore"
-    Else
-        bore.Name = "finish_bore"
-    End If
+	Else
+
+		Set curveL = doc.CreateCurvePtList
+		    curveL.AddPt(id/2+.02,0,0)
+		    curveL.AddPt(id/2,0,-.02)
+		If optfeatures = 1 Then
+		    curveL.AddPt(id/2,0,-oal-.05)
+		Else
+		    curveL.AddPt(id/2,0,-.03)
+		End If
+		Set curve = curveL.AddCurveFromPtList(False)
+
+		Set bore = doc.Features.AddBore(curve,,,)
+
+		    If dlgmachine = "5506" Then
+		        bore.SetAttribute(eAID_BelowCenterline,,True)
+		    End If
+
+		    bore.SetAttribute(eAID_TurnDoRough,,False,False,)
+		    bore.Operations(1).OverrideSpeed(boresfm,)
+		    bore.Operations(1).OverrideFeed(boreipr,)
+		    bore.Operations(1).OverrideTool(boretool,)
+		If optfeatures = 1 Then
+		    bore.Name = "finish_bore"
+		    bore.Operations(1).SetAttribute(eAID_MinZBound,,.05,False,)
+		Else
+		    startpt = "pt(" & id/2+.02+Sin(45*pi/180)*(.1) & ",0," & Cos(45*pi/180)*(.1+toolrad1*2) &")"
+		    bore.Operations(1).SetAttribute(eAID_TurnStartPt,,startpt,False,)
+		    bore.Name = "chfr_bore"
+		End If
+
+	End If
 
 End Sub
 
@@ -1663,7 +1801,7 @@ Private Sub CleanOD_Op(opt As String)
 
         Dim frontTurn As FMTurn
 
-    	Set frontTurn = doc.Features.AddTurn(frontCurve3,,,)
+    	Set frontTurn = doc.Features.AddTurn(frontCurveL,,,)
     	  frontTurn.SetAttribute(eAID_TurnDoFinish, ,False)
     	If stock_od/2+.1-od/2-fin_allow > .125 Then
             frontTurn.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,0,False,)
@@ -1676,18 +1814,18 @@ Private Sub CleanOD_Op(opt As String)
         frontTurn.Operations(1).SetAttribute(eAID_SkipWallPass,,True,False,)
         frontTurn.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
         frontTurn.Operations(1).SetAttribute(eAID_TurnEndPt,,endptF,False,)
-    	frontTurn.Operations(1).OverrideSpeed(frontTurnsfm,)
-        frontTurn.Operations(1).OverrideFeed(frontTurnipr,)
-        frontTurn.Operations(1).OverrideTool(frontTurntool,)
+    	frontTurn.Operations(1).OverrideSpeed(turnsfm,)
+        frontTurn.Operations(1).OverrideFeed(turnipr,)
+        frontTurn.Operations(1).OverrideTool(turntool,)
         frontTurn.Name = "clean_od"
     Else
-        Dim backCurveL As FMCurvePtList
-        Dim backCurve As FMCurve
+        Dim backcurveL As FMCurvePtList
+        Dim backcurve As FMCurve
 
-        Set backCurveL = doc.CreateCurvePtList
-        backCurveL.AddPt(stock_od/2+.1-.125,0,face_1st)
-        backCurveL.AddPt(stock_od/2+.1-.125,0,-oal/2-.014+.05)
-        Set backCurve = backCurveL.AddCurveFromPtList(False)
+        Set backcurveL = doc.CreateCurvePtList
+        backcurveL.AddPt(stock_od/2+.1-.125,0,face_1st)
+        backcurveL.AddPt(stock_od/2+.1-.125,0,-oal/2-.014+.05)
+        Set backcurve = backcurveL.AddCurveFromPtList(False)
 
         Dim endptB As String
 
@@ -1699,7 +1837,7 @@ Private Sub CleanOD_Op(opt As String)
 
         Dim backTurn As FMTurn
 
-        Set backTurn = doc.Features.AddTurn(backCurve,,,)
+        Set backTurn = doc.Features.AddTurn(backcurve,,,)
         backTurn.SetAttribute(eAID_TurnDoFinish,,False)
         If stock_od/2+.1-od/2-fin_allow > .125 Then
             backTurn.Operations(1).SetAttribute(eAID_TurnFinishXAllow,,0,False,)
@@ -1719,95 +1857,38 @@ Private Sub CleanOD_Op(opt As String)
 
 End Sub
 
-Private Sub BackFace_Op
+Private Sub Eccentric_Op
 
-    Dim passes As Integer
+Dim curveL As FMCurvePtList
+Dim curve As FMCurve
 
-    If (face_2nd/face_doc) - Round((face_2nd/face_doc),0) > .00000001 Then
-        passes = Round((face_2nd/face_doc),0)+1
-    Else
-        passes = Round((face_2nd/face_doc),0)
+Set curveL = doc.CreateCurvePtList
+    curveL.AddPt(id/2+.02,0,0)
+    curveL.AddPt(id/2,0,-.02)
+    curveL.AddPt(id/2,0,-oal-.05)
+Set curve = curveL.AddCurveFromPtList(False)
+
+Dim bore As FMBore
+
+Set bore = doc.Features.AddBore(curve,,,)
+
+    If dlgmachine = "5506" Then
+        bore.SetAttribute(eAID_BelowCenterline,,True)
     End If
 
-    Dim semiendpt, endpt As String
-    Dim semiFace, finFace As FMFace
-
-    If passes = 1 Then
-
-    endpt = "pt(" & id/2-.05+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
-
-    Set finFace = doc.Features.AddTurnFace(face_2nd,True,stock_od+.2,id-.1,,False)
-        finFace.SetAttribute(eAID_DoRough,,False)
-        finFace.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
-        finFace.Operations(1).OverrideSpeed(turnsfm,)
-        finFace.Operations(1).OverrideFeed(turnipr,)
-        finFace.Operations(1).OverrideTool(turntool,)
-        finFace.Name = "fin_face_"
-
-    ElseIf passes = 2 Then
-
-    semiendpt = "pt(" & id/2-.05+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
-
-    Set semiFace = doc.Features.AddTurnFace(face_2nd/2,True,stock_od+.2,id-.1,,False)
-        semiFace.SetFeatureLocation(eFLT_xyz,0,0,face_2nd/2,0,0,0,0,,,,,)
-        semiFace.SetAttribute(eAID_DoRough,,False,False,)
-        semiFace.Operations(1).SetAttribute(eAID_TurnEndPt,,semiendpt,False,)
-        semiFace.Operations(1).OverrideSpeed(turnsfm,)
-        semiFace.Operations(1).OverrideFeed(turnipr,)
-        semiFace.Operations(1).OverrideTool(turntool,)
-        semiFace.Name = "semi_face_"
-
-    endpt = "pt(" & id/2-.05+Sin(45*pi/180)*(toolrad1+.1) & ",0," & toolrad1+Cos(45*pi/180)*(toolrad1+.1) &")"
-
-    Set finFace = doc.Features.AddTurnFace(face_2nd/2,True,stock_od+.2,id-.1,,False)
-        finFace.SetAttribute(eAID_DoRough,,False,False,)
-        'finFace.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
-        finFace.Operations(1).OverrideSpeed(turnsfm,)
-        finFace.Operations(1).OverrideFeed(turnipr,)
-        finFace.Operations(1).OverrideTool(turntool,)
-        finFace.Name = "fin_face_"
-
-    Else
-
-    endpt = "pt(" & id/2-.05+Sin(45*pi/180)*(.025) & ",0," & toolrad1+face_2nd/passes+Cos(45*pi/180)*(.025) &")"
-
-    Set finFace = doc.Features.AddTurnFace(face_2nd,True,stock_od+.2,id-.1,,False)
-        finFace.SetAttribute(eAID_DoFinish,,False,False,)
-        finFace.Operations(1).SetAttribute(eAID_TurnFinishZAllow,,0,False,)
-        finFace.Operations(1).SetAttribute(eAID_TurnRoughDOC,,face_doc,False,)
-        finFace.Operations(1).SetAttribute(eAID_TurnRoughEngageWindrawAtRapid,,True,False,)
-        finFace.Operations(1).SetAttribute(eAID_TurnEndPt,,endpt,False,)
-        finFace.Operations(1).OverrideSpeed(turnsfm,)
-        finFace.Operations(1).OverrideFeed(turnipr,)
-        finFace.Operations(1).OverrideTool(turntool,)
-        finFace.Name = "fin_face_"
-
-    End If
-
-    If chkforging = 1 Then
-        finFace.SetOuterDiameter(stock_od+.2-.25,,False)
-        If passes=2 Then
-            semiFace.SetOuterDiameter(stock_od+.2-.25,,False)
-        End If
-        If passes <3 Then
-            face2startpt = "pt(" & stock_od/2+.1-.125+toolrad1+.1 & ",0," & toolrad1 &")"
-        Else
-            face2startpt = "pt(" & stock_od/2+.1-.125+.1 & ",0," & face_2nd-face_2nd/passes+toolrad1 &")"
-
-        End If
-        finFace.Operations(1).SetAttribute(eAID_TurnStartPt,,face2startpt,False,)
-        If passes=2 Then
-            semiFace.Order = 3
-        End If
-        finFace.Order = 2
-
-    End If
+    bore.SetAttribute(eAID_TurnDoRough,,False,False,)
+    bore.Operations(1).SetAttribute(eAID_MinZBound,,.05,False,)
+    bore.Operations(1).OverrideSpeed(boresfm,)
+    bore.Operations(1).OverrideFeed(boreipr,)
+    bore.Operations(1).OverrideTool(boretool,)
+    bore.Name = "ecc_bore"
 
 End Sub
 
 '*********************************************************************************
 '*----------------------------------Functions------------------------------------*
 '*********************************************************************************
+
 Function ValidInputDonut() As Boolean
 
 	If program_number = "" Then
