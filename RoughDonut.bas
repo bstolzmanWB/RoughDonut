@@ -88,27 +88,24 @@ End Sub
 
 Sub RoughDonut
 
-	If Application.Version < "24.3.4.016" Then
+	If ApplicationCheck() Then
 
-		If MsgBox("This macro may not be supported in your current version of FeatureCAM. It's written For 2018 release 24.3.4.016 Or later.", vbOkCancel + vbCritical + vbDefaultButton2, "Version Error") = vbOK Then
+		trepanFlag = False
+		dlgmaterial = "Select Material"
+		dlgmachine = "Select Machine"
+		face_1st = .1
+		face_2nd = .1
 
-			trepanFlag = False
-			dlgmaterial = "Select Material"
-			dlgmachine = "Select Machine"
-			face_1st = .1
-			face_2nd = .1
-
-			CreateDialogMachine 'call sub for machine selection
-			CreateDialogMaterial 'call sub for material selection
-			InitializeVars 'call initialize variable routine
-			CreateDialogDonut 'call main dimmension input form
-			If trepanFlag Then
-				CreateDialogTrepan
-			End If
-			InitializeDoc 'call initialize doc objects routine
-			CreateFeature 'call to create features
-			End
+		CreateDialogMachine 'call sub for machine selection
+		CreateDialogMaterial 'call sub for material selection
+		InitializeVars 'call initialize variable routine
+		CreateDialogDonut 'call main dimmension input form
+		If trepanFlag Then
+			CreateDialogTrepan
 		End If
+		InitializeDoc 'call initialize doc objects routine
+		CreateFeature 'call to create features
+
 	End If
 End Sub
 
@@ -1888,6 +1885,19 @@ End Sub
 '*********************************************************************************
 '*----------------------------------Functions------------------------------------*
 '*********************************************************************************
+Function ApplicationCheck() As Boolean
+
+	If Application.Version = "24.3.4.016" Then
+		If MsgBox("This macro may not be supported in your current version of FeatureCAM. It's written For 2018 release 24.3.4.016 Or later.", vbOkCancel + vbCritical + vbDefaultButton2, "Version Error") = vbOK Then
+			ApplicationCheck = True
+		Else
+			ApplicationCheck = False
+		End If
+	Else
+		ApplicationCheck = True
+	End If
+
+End Function
 
 Function ValidInputDonut() As Boolean
 
