@@ -88,7 +88,7 @@ End Sub
 
 Sub RoughDonut
 
-	If Application.Version = "24.3.4.016" Then
+	If Application.Version < "24.3.4.016" Then
 
 		If MsgBox("This macro may not be supported in your current version of FeatureCAM. It's written For 2018 release 24.3.4.016 Or later.", vbOkCancel + vbCritical + vbDefaultButton2, "Version Error") = vbOK Then
 
